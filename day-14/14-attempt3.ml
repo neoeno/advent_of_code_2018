@@ -36,7 +36,8 @@ let lookup_scores scores indexes lookup =
   let index_scores = List.map indexes ~f:(fun index -> match lookup.(index) with
     | GoTo (a, b) -> (match lookup.(a) with
       | List ls -> Some (List.slice ls b 0)
-      | _ -> None)
+      | GoTo _ -> raise (Failure "Deep goto")
+      | Uncalculated -> raise (Failure "Uncalculated goto"))
     | List a -> Some a
     | Uncalculated -> None
   ) in
@@ -56,8 +57,10 @@ let lookup_scores scores indexes lookup =
         new_index % scores_count
       else
         new_index
-    ) in
-    (new_scores, advanced_indexes)
+    ) in (
+      Printf.printf "Saved %d scores\n" ((List.length new_scores) - (List.length scores)); flush stdout;
+      (new_scores, advanced_indexes)
+    )
 
 let format (scores, indexes) =
   let active_char i = (if is_some @@ List.find indexes ~f:((=) i) then "#" else "") in
@@ -68,16 +71,27 @@ let consolidate scores lookup =
   let rec collect_scores_from scores = match scores with
     | [] -> []
     | (score::scores) -> score :: (collect_scores_from (List.drop scores (score))) in
-  List.iter (List.range 0 10) ~f:(fun i ->
-    let sequence = (collect_scores_from (List.drop scores i)) in (
-      lookup.(i) <- List sequence;
-      ignore (List.foldi sequence ~init:(i) ~f:(fun i2 sum score ->
-        let place = sum + score + 1 in (
-          lookup.(place) <- GoTo (i, i2 + 1);
-          place
-        )
-      ))
-    )
+  List.iter ([0; 1; 2; 3; 4; 5; 6; 7; 8; 9]) ~f:(fun i ->
+    match lookup.(i) with
+      | List existing when i = 7 ->
+        let sequence = (collect_scores_from (List.drop scores i)) in (
+          lookup.(i) <- List sequence;
+          ignore (List.foldi sequence ~init:(i) ~f:(fun i2 sum score ->
+            let place = sum + score + 1 in (
+              lookup.(place) <- GoTo (i, i2 + 1);
+              place
+            )
+          )))
+      | Uncalculated ->
+        let sequence = (collect_scores_from (List.drop scores i)) in (
+          lookup.(i) <- List sequence;
+          ignore (List.foldi sequence ~init:(i) ~f:(fun i2 sum score ->
+            let place = sum + score + 1 in (
+              lookup.(place) <- GoTo (i, i2 + 1);
+              place
+            )
+          )))
+      | _ -> ignore ()
   ); lookup
 
 
@@ -93,12 +107,23 @@ let rec go_hard_until scores indexes lookup n =
     go_hard_until scores indexes lookup n
   )
 
+let rec search_for (a1::b1::c1::d1::e1::f1::rest) [a2;b2;c2;d2;e2;f2] n =
+  if a1 = a2 && b1 = b2 && c1 = c2 && d1 = d2 && e1 = e2 && f1 = f2 then
+    n
+  else
+    search_for (b1::c1::d1::e1::f1::rest) [a2;b2;c2;d2;e2;f2] (n + 1)
 
-
-let main n m =
+let step1 n m =
   let scores = [3; 7] in
   let indexes = [0; 1] in
   let lookup = Array.create (n + m + 1000) Uncalculated in
   let scores = go_hard_until scores indexes lookup (n + 100) in
   let slice = List.slice scores n (n + m) in
   List.fold_right (List.map slice ~f:(Int.to_string)) ~init:("") ~f:(^)
+
+let step2 n m pattern =
+  let scores = [3; 7] in
+  let indexes = [0; 1] in
+  let lookup = Array.create (n + m + 1000) Uncalculated in
+  let scores = go_hard_until scores indexes lookup (n + 100) in
+  search_for scores pattern 0
