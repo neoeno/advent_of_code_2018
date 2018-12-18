@@ -186,6 +186,8 @@ module World = struct
 end
 
 module Engine = struct
+  module VectorSet = Set.Make(Vector)
+
   let best_attack_target world unit =
     let neighbours = Vector.neighbours (Entity.position unit) in
     let enemies = World.enemies world unit in
@@ -194,15 +196,31 @@ module Engine = struct
         Entity.position enemy = neighbour)) in
     List.min_elt available_enemies ~compare:(fun a b -> (Entity.health a) - (Entity.health b))
 
+
   let best_move_target world unit =
-    World.enemies world unit
+    let rec best_move_cell targets cells =
+      if List.is_empty targets then None else
+      let found_cells = List.filter cells ~f:(fun cell -> List.exists targets ~f:((=) cell)) in
+      if List.is_empty found_cells then
+        let new_cells = List.concat_map cells ~f:(fun cell ->
+          Vector.neighbours cell
+          |> List.filter ~f:(World.empty world)
+        ) @ cells
+        |> List.dedup_and_sort ~compare in
+        if (List.length new_cells) <> (List.length cells) then
+          best_move_cell targets new_cells
+        else
+          None
+      else
+        found_cells
+        |> List.sort  ~compare:(fun a b ->
+          (Vector.cell_num a (World.size world)) - (Vector.cell_num b (World.size world))
+        )
+        |> List.hd in
+    let enemy_cells = World.enemies world unit
     |> List.concat_map ~f:(fun enemy -> Vector.neighbours (Entity.position enemy))
-    |> List.filter ~f:(fun vec -> World.empty world vec)
-    >>| (fun vec -> (vec, route ~available:(World.empty world) (Entity.position unit) vec))
-    |> List.filter ~f:(fun (vec, route) -> is_some route)
-    |> List.map ~f:(fun (vec, route) -> (vec, Option.value_exn route))
-    |> List.min_elt ~compare:(fun (_, route_a) (_, route_b) -> (List.length route_a) - (List.length route_b))
-    |> Option.map ~f:(fst)
+    |> List.filter ~f:(fun vec -> World.empty world vec) in
+    best_move_cell enemy_cells [Entity.position unit]
 
     (* Doesn't do tie breaking yet *)
 
@@ -258,7 +276,7 @@ let load_map filename : World.world =
         let id = (Vector.cell_num (Vector.make col row) (find_bounds grid)) in
         let attack_power = match category with
           | Entity.Goblin -> 3
-          | Entity.Elf -> 18
+          | Entity.Elf -> 19
           | Entity.Wall -> 0 in
         Entity.make id (Vector.make col row) category 200 attack_power)
       |> Option.map ~f:(fun e -> e :: items)
